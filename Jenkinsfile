@@ -1,13 +1,19 @@
 pipeline {
     agent any
 
+    tools {
+        jdk 'JDK17'   // Name configured in Jenkins global tools
+        maven 'Maven' // Name configured in Jenkins global tools
+    }
+
     environment {
         GIT_REPO   = 'https://github.com/purushotham0912/spring-petclinic.git'
         GIT_BRANCH = 'main'
 
         TOMCAT_USER = 'ubuntu'
-        TOMCAT_HOST = '13.53.62.192'
+        TOMCAT_HOST = '13.53.62.192'          // Replace with your Tomcat EC2 public IP
         DEPLOY_DIR  = '/opt/tomcat/webapps'
+        WAR_NAME    = 'petclinic.war'
     }
 
     stages {
@@ -22,11 +28,7 @@ pipeline {
         stage('Build') {
             steps {
                 dir('spring-petclinic') {
-                    sh '''
-                        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-                        export PATH=$JAVA_HOME/bin:$PATH
-                        mvn clean package -DskipTests
-                    '''
+                    sh 'mvn clean package -DskipTests'
                 }
             }
         }
@@ -34,10 +36,13 @@ pipeline {
         stage('Pre-Deploy Check') {
             steps {
                 script {
+                    // Test SSH connectivity
                     sh "ssh -o BatchMode=yes ${TOMCAT_USER}@${TOMCAT_HOST} 'echo SSH OK'"
+
+                    // Check if WAR file exists
                     def warExists = sh(script: "ls target/*.war || true", returnStdout: true).trim()
                     if (!warExists) {
-                        error "WAR file not found!"
+                        error "WAR file not found! Build failed."
                     }
                 }
             }
@@ -49,7 +54,11 @@ pipeline {
                     script {
                         def warFile = sh(script: "ls target/*.war | head -n 1", returnStdout: true).trim()
                         echo "Deploying WAR: ${warFile}"
-                        sh "scp ${warFile} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/petclinic.war"
+
+                        // Copy WAR to Tomcat
+                        sh "scp ${warFile} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/${WAR_NAME}"
+
+                        // Restart Tomcat
                         sh "ssh ${TOMCAT_USER}@${TOMCAT_HOST} 'sudo systemctl restart tomcat'"
                     }
                 }
@@ -58,7 +67,11 @@ pipeline {
     }
 
     post {
-        success { echo "Deployment completed successfully!" }
-        failure { echo "Pipeline failed. Check logs." }
+        success {
+            echo "Deployment completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed. Check logs for details."
+        }
     }
 }
