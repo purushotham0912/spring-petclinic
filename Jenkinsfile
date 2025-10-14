@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        jdk 'JDK25'   // JDK configured in Jenkins
-        maven 'Maven' // Maven configured in Jenkins
+        jdk 'JDK25'   // Your JDK configured in Jenkins
+        maven 'Maven' // Your Maven configured in Jenkins
     }
 
     environment {
@@ -11,9 +11,12 @@ pipeline {
         GIT_BRANCH = 'main'
 
         TOMCAT_USER = 'ubuntu'
-        TOMCAT_HOST = '13.53.62.192'          // Your Tomcat EC2 public IP
+        TOMCAT_HOST = '13.53.62.192'
         DEPLOY_DIR  = '/opt/tomcat/webapps'
         WAR_NAME    = 'petclinic.war'
+
+        // Path to private key on Jenkins server
+        SSH_KEY = '/var/lib/jenkins/.ssh/id_rsa'
     }
 
     stages {
@@ -35,19 +38,17 @@ pipeline {
 
         stage('Pre-Deploy Check') {
             steps {
-                sshagent(['my-ssh-key-id']) {
-                    // Test SSH connectivity to Tomcat server
-                    sh "ssh -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} 'echo SSH OK'"
+                // Test SSH connectivity
+                sh "ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} 'echo SSH OK'"
 
-                    // Check if WAR file exists locally
-                    script {
-                        def warExists = sh(
-                            script: "ls spring-petclinic/target/${WAR_NAME} || true", 
-                            returnStdout: true
-                        ).trim()
-                        if (!warExists) {
-                            error "WAR file not found! Build failed."
-                        }
+                // Check if WAR file exists locally
+                script {
+                    def warExists = sh(
+                        script: "ls spring-petclinic/target/${WAR_NAME} || true", 
+                        returnStdout: true
+                    ).trim()
+                    if (!warExists) {
+                        error "WAR file not found! Build failed."
                     }
                 }
             }
@@ -55,21 +56,19 @@ pipeline {
 
         stage('Deploy to Tomcat') {
             steps {
-                sshagent(['my-ssh-key-id']) {
-                    // Remove old WAR & exploded directory (optional but safer)
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} '
-                            rm -f ${DEPLOY_DIR}/${WAR_NAME} && 
-                            rm -rf ${DEPLOY_DIR}/${WAR_NAME.replace(".war","")}
-                        '
-                    """
+                // Remove old WAR and exploded folder
+                sh """
+                    ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} '
+                        rm -f ${DEPLOY_DIR}/${WAR_NAME} && 
+                        rm -rf ${DEPLOY_DIR}/${WAR_NAME.replace(".war","")}
+                    '
+                """
 
-                    // Copy new WAR
-                    sh "scp -o StrictHostKeyChecking=no spring-petclinic/target/${WAR_NAME} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/"
+                // Copy new WAR
+                sh "scp -i ${SSH_KEY} -o StrictHostKeyChecking=no spring-petclinic/target/${WAR_NAME} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/"
 
-                    // Restart Tomcat
-                    sh "ssh -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} 'sudo systemctl restart tomcat.service'"
-                }
+                // Restart Tomcat
+                sh "ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} 'sudo systemctl restart tomcat.service'"
             }
         }
     }
