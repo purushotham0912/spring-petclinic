@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        jdk 'JDK25'   // Use the JDK25 you configured in Jenkins
-        maven 'Maven' // Ensure Maven is configured in Jenkins global tools
+        jdk 'JDK25'   // JDK configured in Jenkins
+        maven 'Maven' // Maven configured in Jenkins
     }
 
     environment {
@@ -35,14 +35,19 @@ pipeline {
 
         stage('Pre-Deploy Check') {
             steps {
-                script {
+                sshagent(['my-ssh-key-id']) {
                     // Test SSH connectivity to Tomcat server
-                    sh "ssh -o BatchMode=yes ${TOMCAT_USER}@${TOMCAT_HOST} 'echo SSH OK'"
+                    sh "ssh -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} 'echo SSH OK'"
 
-                    // Check if WAR file exists
-                    def warExists = sh(script: "ls target/*.war || true", returnStdout: true).trim()
-                    if (!warExists) {
-                        error "WAR file not found! Build failed."
+                    // Check if WAR file exists locally
+                    script {
+                        def warExists = sh(
+                            script: "ls spring-petclinic/target/${WAR_NAME} || true", 
+                            returnStdout: true
+                        ).trim()
+                        if (!warExists) {
+                            error "WAR file not found! Build failed."
+                        }
                     }
                 }
             }
@@ -50,17 +55,20 @@ pipeline {
 
         stage('Deploy to Tomcat') {
             steps {
-                dir('spring-petclinic') {
-                    script {
-                        def warFile = sh(script: "ls target/*.war | head -n 1", returnStdout: true).trim()
-                        echo "Deploying WAR: ${warFile}"
+                sshagent(['my-ssh-key-id']) {
+                    // Remove old WAR & exploded directory (optional but safer)
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} '
+                            rm -f ${DEPLOY_DIR}/${WAR_NAME} && 
+                            rm -rf ${DEPLOY_DIR}/${WAR_NAME.replace(".war","")}
+                        '
+                    """
 
-                        // Copy WAR to Tomcat
-                        sh "scp ${warFile} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/${WAR_NAME}"
+                    // Copy new WAR
+                    sh "scp -o StrictHostKeyChecking=no spring-petclinic/target/${WAR_NAME} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/"
 
-                        // Restart Tomcat
-                        sh "ssh ${TOMCAT_USER}@${TOMCAT_HOST} 'sudo systemctl restart tomcat'"
-                    }
+                    // Restart Tomcat
+                    sh "ssh -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_HOST} 'sudo systemctl restart tomcat.service'"
                 }
             }
         }
@@ -68,10 +76,10 @@ pipeline {
 
     post {
         success {
-            echo "Deployment completed successfully!"
+            echo "✅ Deployment completed successfully!"
         }
         failure {
-            echo "Pipeline failed. Check logs for details."
+            echo "❌ Pipeline failed. Check logs for details."
         }
     }
 }
