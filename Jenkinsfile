@@ -1,38 +1,64 @@
 pipeline {
     agent any
+
     tools {
-        jdk 'JDK17'
-        maven 'Maven'
+        jdk 'JDK17'     // Must match the name in Jenkins Global Tool Configuration
+        maven 'Maven'   // Must match the name in Jenkins Global Tool Configuration
     }
 
     environment {
         TOMCAT_USER = 'ubuntu'
         TOMCAT_HOST = '13.53.62.192'
         DEPLOY_DIR  = '/opt/tomcat/webapps'
+        GIT_BRANCH  = 'main'
+        GIT_REPO    = 'https://github.com/purushotham0912/spring-petclinic.git'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                git 'https://github.com/purushotham0912/spring-petclinic.git'
+                // Avoid workspace issues with spaces
+                dir('spring-petclinic') {
+                    git branch: "${GIT_BRANCH}", url: "${GIT_REPO}"
+                }
             }
         }
 
         stage('Build') {
             steps {
-                sh 'mvn clean package -DskipTests'
+                dir('spring-petclinic') {
+                    sh 'mvn clean package -DskipTests'
+                }
             }
         }
 
         stage('Deploy to Tomcat') {
             steps {
-                script {
-                    def warFile = sh(script: "ls target/*.war | head -n 1", returnStdout: true).trim()
-                    echo "Deploying WAR: ${warFile}"
-                    sh "scp ${warFile} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/petclinic.war"
-                    sh "ssh ${TOMCAT_USER}@${TOMCAT_HOST} 'sudo systemctl restart tomcat'"
+                dir('spring-petclinic') {
+                    script {
+                        // Get the generated WAR file
+                        def warFile = sh(script: "ls target/*.war | head -n 1", returnStdout: true).trim()
+                        echo "Deploying WAR: ${warFile}"
+
+                        // Copy WAR to Tomcat server
+                        sh "scp ${warFile} ${TOMCAT_USER}@${TOMCAT_HOST}:${DEPLOY_DIR}/petclinic.war"
+
+                        // Restart Tomcat (requires NOPASSWD sudo on Tomcat server)
+                        sh "ssh ${TOMCAT_USER}@${TOMCAT_HOST} 'sudo systemctl restart tomcat'"
+                    }
                 }
             }
+        }
+
+    }
+
+    post {
+        success {
+            echo "Deployment completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed. Check logs for details."
         }
     }
 }
