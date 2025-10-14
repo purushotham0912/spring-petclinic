@@ -2,9 +2,6 @@ pipeline {
     agent any
 
     environment {
-        JAVA_HOME = '/usr/lib/jvm/java-17-openjdk-amd64'
-        PATH      = "${JAVA_HOME}/bin:${env.PATH}:/usr/share/maven/bin"
-
         GIT_REPO   = 'https://github.com/purushotham0912/spring-petclinic.git'
         GIT_BRANCH = 'main'
 
@@ -25,7 +22,11 @@ pipeline {
         stage('Build') {
             steps {
                 dir('spring-petclinic') {
-                    sh 'mvn clean package -DskipTests'
+                    sh '''
+                        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+                        export PATH=$JAVA_HOME/bin:$PATH
+                        mvn clean package -DskipTests
+                    '''
                 }
             }
         }
