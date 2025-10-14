@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        jdk 'JDK17'   // Name configured in Jenkins global tools
-        maven 'Maven' // Name configured in Jenkins global tools
+        jdk 'JDK25'   // Use the JDK25 you configured in Jenkins
+        maven 'Maven' // Ensure Maven is configured in Jenkins global tools
     }
 
     environment {
@@ -11,7 +11,7 @@ pipeline {
         GIT_BRANCH = 'main'
 
         TOMCAT_USER = 'ubuntu'
-        TOMCAT_HOST = '13.53.62.192'          // Replace with your Tomcat EC2 public IP
+        TOMCAT_HOST = '13.53.62.192'          // Your Tomcat EC2 public IP
         DEPLOY_DIR  = '/opt/tomcat/webapps'
         WAR_NAME    = 'petclinic.war'
     }
@@ -36,7 +36,7 @@ pipeline {
         stage('Pre-Deploy Check') {
             steps {
                 script {
-                    // Test SSH connectivity
+                    // Test SSH connectivity to Tomcat server
                     sh "ssh -o BatchMode=yes ${TOMCAT_USER}@${TOMCAT_HOST} 'echo SSH OK'"
 
                     // Check if WAR file exists
